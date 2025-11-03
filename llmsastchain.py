@@ -8,112 +8,27 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-SYSTEM_PROMPT_ONLY_ONE_AGENT = """
-You are a "Code Vulnerability Auditor", a senior software architect with
-deep expertise in the OWASP Top 10 and CWE.
+script_path = os.path.realpath(__file__)
+BASE_DIR = os.path.dirname(script_path)
+PROMPTS_DIR = os.path.join(BASE_DIR, "prompts")
 
-Your task is to conduct a complete security review of a code change
-provided as a raw 'git diff'.
+def load_prompt_from_file(filename: str) -> str:
+    """Wczytuje zawartość pliku z folderu PROMPTS_DIR."""
+    file_path = os.path.join(PROMPTS_DIR, filename)
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"BŁĄD: Nie znaleziono pliku promptu. Upewnij się, że plik istnieje.", file=sys.stderr)
+        print(f"Oczekiwana ścieżka: {file_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"Błąd podczas wczytywania promptu {file_path}: {e}", file=sys.stderr)
+        sys.exit(1)
 
-You will receive the full content of the file (for context) and the
-raw 'git diff' showing the changes.
-
-Perform the following steps internally:
-1.  **Context Analysis:** Understand the code's main purpose (e.g., login, payments, data processing).
-2.  **Change Analysis:** Identify what technically changed (new inputs, modified logic, removed validation).
-3.  **Vulnerability Detection:** Based on the context and the change, identify potential vulnerabilities (e.g., SQLi, XSS, IDOR, Open Redirect).
-4.  **Risk & FP Assessment:** Critically evaluate your own findings. Reject clear false positives (e.g., if you see sanitization, parameterization, or safe defaults being used).
-
-OUTPUT (English):
-- A concise summary of your findings.
-- Use a bulleted list for vulnerabilities. For each item, provide:
-  * "Confirmed Vulnerability (High/Medium/Low Risk): <name> (CWE-xxx). <Reasoning referencing the diff>."
-  * "Rejected (False Positive): <name>. <Reasoning why it is not a risk>."
-- If no clear risks are found, state: "No obvious vulnerabilities found."
-"""
-
-SYSTEM_PROMPT_CONTEXT = """
-You are a senior software architect acting as a "Code Context Analyzer".
-Your task is to analyze source code and generate a concise summary of its
-business and technical context.
-
-You will receive the content of a file. Your goal is to answer the following questions
-in a coherent, 2-3 paragraph summary in English:
-
-1.  What is the main purpose or responsibility of this code? (e.g., "Handling user login",
-    "Product data model", "Interface to a payment API").
-2.  What key input data or data types does it process?
-    (e.g., "Login credentials (email, password)", "Session ID", "Credit card data").
-3.  What other external components (of the system or the world) does it seem to
-    communicate with? (e.g., "Database (sessions, users)", "External authorization API",
-    "File system").
-
-Your analysis must be concise and focused solely on the context,
-ignoring implementation details that do not affect the understanding of its role.
-"""
-
-
-SYSTEM_PROMPT_VULN = """
-You are a specialized Security Analyst called "Vulnerability Hunter".
-You are primed with OWASP Top 10 and CWE knowledge. Your job is to
-review:
-- Code context summary (from Agent 1),
-
-and produce a concise list of potential vulnerabilities with reasoning.
-
-OUTPUT REQUIREMENTS:
-- Write in English.
-- Use bullet points. For each item include:
-  * Name of vulnerability and (CWE-xxx) if known.
-  * Very short justification referencing concrete signals:
-    - parameters/fields introduced or modified,
-    - removed validations/sanitization,
-    - risky APIs, string interpolation, redirects, cookie/session use,
-    - auth/authorization checks, input parsing, serialization/deserialization,
-    - file/OS operations, crypto, error handling, logging.
-  * (Optional) brief risk context if Agent 1 indicates sensitive flows (e.g., login, payments).
-- If no clear risk is found, say: "No obvious vulnerabilities found based on provided diffs."
-
-STRICTLY AVOID:
-- Business speculation.
-- Repeating the entire diff.
-- Vague statements without pointing to specific change symptoms.
-
-FORMAT EXAMPLE:
-- Potential Vulnerability: Open Redirect (CWE-601). Reason: New `redirect_url` parameter (from Agent 2) is used for a redirect without validation (see added lines). Agent 1 indicates login flow, so impact is high.
-- Potential Vulnerability: SQL Injection (CWE-89). Reason: `sanitize_input()` call removed for `username`; value is used to build a DB query.
-
-Be skeptical, but concise and specific.
-"""
-
-SYSTEM_PROMPT_RISK_FP = """
-You are Agent: "Risk & FP Verifier" (Weryfikator Ryzyka i Fałszywych Pozytywów).
-Act as a devil's advocate to critically evaluate the vulnerability hypotheses produced by the Vulnerability Hunter Agent.
-
-
-GOAL:
-- Reduce false positives by seeking concrete evidence in the provided context that DISCONFIRMS or LOWERS the risk of a vulnerability.
-- Confirm only the findings that remain well-supported.
-
-
-INPUTS:
-- A list of potential vulnerabilities from previous agent.
-- The code context summary from first Agent.
-
-
-OUTPUT (English):
-- A filtered and assessed list. For each item, choose one of:
-* "Confirmed Vulnerability (High/Medium/Low Risk): <name>. <short reasoning>."
-* "Rejected (False Positive): <name>. <short reasoning – concrete evidence contradicts the finding>."
-* "Inconclusive: <name>. <short reasoning – specify what evidence is missing>."
-- Keep each item to 1–3 short sentences; cite concrete signals (parameters, removed checks, API usage, host/domain validation, ORM parameterization, etc.). Avoid repeating large code blocks.
-
-
-PRINCIPLES:
-- Prefer conservative confirmations; when in doubt and lacking evidence, mark as Inconclusive rather than Confirmed.
-- If validation, sanitization, or safe defaults are present (e.g., ORM parameterization, allow-list redirects, CSRF protection), use them to reject or lower risk.
-- Do not invent system behavior beyond what the inputs support.
-"""
+SYSTEM_PROMPT_ONLY_ONE_AGENT = load_prompt_from_file("single_agent.txt")
+SYSTEM_PROMPT_CONTEXT = load_prompt_from_file("context_agent.txt")
+SYSTEM_PROMPT_VULN = load_prompt_from_file("vuln_hunter_agent.txt")
+SYSTEM_PROMPT_RISK_FP = load_prompt_from_file("fp_remover_agent.txt")
 
 
 @dataclass(frozen=True)
@@ -239,7 +154,7 @@ def run_short_code_dataset():
                 print(f"--- Finished Processing Sample {index + 1} ---")
 
                 counter += 1
-                if counter >= 3:
+                if counter >= 1:
                     print("\n--- Reached processing limit of 3 samples. Exiting. ---")
                     break
 
