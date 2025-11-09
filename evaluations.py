@@ -1,75 +1,12 @@
-import os
 import pandas as pd
 import sys
 import json
-import re
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from agents_logic import CodeAgents, AgentConfig
-
-
-def run_short_code_dataset():
-    print("--- Initializing agents ---")
-    agents = CodeAgents()  
-    
-    csv_file = "datasets/vulnerability_fix_dataset.csv"
-
-    counter = 0
-    
-    try:
-        df = pd.read_csv(csv_file)
-        
-        if 'vulnerable_code' not in df.columns:
-            print(f"Error: Column 'vulnerable_code' not found in {csv_file}", file=sys.stderr)
-        else:
-            print(f"--- Successfully loaded {len(df)} samples from {csv_file} ---")
-            
-            for index, row in df.iterrows():
-                sample_code = row['vulnerable_code']
-                
-                # Skip rows where the code is missing
-                if not isinstance(sample_code, str) or not sample_code.strip():
-                    print(f"\n--- Skipping row {index + 1} (no code found) ---")
-                    continue
-                
-                print(f"\n--- Processing Sample {index + 1} of {len(df)} ---")
-                
-                print("--- Running analysis ---")
-                analyzed_code = agents.analyze_code(sample_code)
-                vulnerabilities = agents.find_vulnerabilities(
-                    analyzed_code,
-                )
-                verdict = agents.verify_risk_and_fp(
-                    vuln_list=vulnerabilities,
-                    context_summary=analyzed_code,
-                )   
-
-                # --- Print the results for this specific sample ---
-                print("\n--- Code Context Summary ---")
-                print(analyzed_code)
-                print("\n--- Potential Vulnerabilities ---")
-                print(vulnerabilities)
-                print("\n--- Final Risk & FP Assessment ---")
-                print(verdict)
-                print(f"--- Finished Processing Sample {index + 1} ---")
-
-                counter += 1
-                if counter >= 1:
-                    print("\n--- Reached processing limit of 3 samples. Exiting. ---")
-                    break
-
-    except FileNotFoundError:
-        print(f"Error: The file {csv_file} was not found.", file=sys.stderr)
-    except pd.errors.EmptyDataError:
-        print(f"Error: The file {csv_file} is empty.", file=sys.stderr)
-    except Exception as e:
-        print(f"An error occurred: {e}", file=sys.stderr)
-
-
-
 
 def extract_json_from_string(text):
     """
@@ -256,6 +193,3 @@ def evaluate_vulnerability_fix_dataset():
         print(f"Error: The file {csv_file} is empty.", file=sys.stderr)
     except Exception as e:
         print(f"An unhandled error occurred: {e}", file=sys.stderr)
-
-if __name__ == "__main__":
-    evaluate_vulnerability_fix_dataset()
