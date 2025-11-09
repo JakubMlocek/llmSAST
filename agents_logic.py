@@ -71,11 +71,16 @@ class CodeAgents:
             ),
         )
 
+        self._single_agent_chain = self._make_chain(
+            system_prompt=SYSTEM_PROMPT_ONLY_ONE_AGENT,
+            human_template="Here is the source code to analyze:\n\n```{input_code}```",
+        )
+
     def _make_chain(self, *, system_prompt: str, human_template: str):
         llm = ChatGoogleGenerativeAI(
             model=self._config.model,
             temperature=self._config.temperature,
-            api_key=self._config.api_key, 
+            api_key=self._config.api_key,
         )
         prompt = ChatPromptTemplate.from_messages(
             [("system", system_prompt), ("human", human_template)]
@@ -103,3 +108,7 @@ class CodeAgents:
         "vuln_list": vuln_list,
         "context_summary": context_summary,        }
     )
+
+    def analyze_code_single(self, input_code: str) -> str:
+        """Uruchamia pojedynczego agenta do analizy kodu."""
+        return self._single_agent_chain.invoke({"input_code": input_code})
