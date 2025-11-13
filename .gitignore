@@ -1,2 +1,4 @@
 .env
-datasets/*
+datasets/p*
+datasets/d*
+datasets/code*
